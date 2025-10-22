@@ -84,6 +84,8 @@ python app.py
 |------------|------|--------------|
 | **[実装計画](./IMPLEMENTATION_PLAN.md)** | **既存UI開発者向け実装ガイド** | **今すぐ着手すべき内容を確認** |
 | **[未実装UI開発計画](./MISSING_UI_PLAN.md)** | **未実装UIの詳細開発計画** | **新規UI開発時** |
+| **[ローカル開発ガイド](./LOCAL_DEV_GUIDE.md)** | **Venv環境でのローカルテスト手順** | **開発開始時、ローカルでのUI確認** |
+| **[デプロイフロー](./DEPLOYMENT_FLOW.md)** | **GitHub Actions→Databricks Apps自動デプロイ** | **デプロイ時、CI/CD設定時** |
 
 ### 詳細ドキュメント (PricingAIFrontend-develop 2/docs/development/)
 
@@ -199,19 +201,26 @@ git push origin feature/FE-001-NewFeature
 ### 2. デプロイフロー
 
 ```bash
+# ローカル開発: Venv環境でUIテスト
+python app.py
+# → http://localhost:7860 でUI確認
+
 # 開発環境: developブランチへのpushで自動デプロイ
 git push origin develop
-# → Databricks Apps (Development) へ自動デプロイ
+# → GitHub Actions実行 → Databricks Apps (Development) へ自動デプロイ
 
 # 本番環境: mainブランチへのマージで自動デプロイ
 git checkout main
 git merge develop
 git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin main --tags
-# → Databricks Apps (Production) へ自動デプロイ
+# → GitHub Actions実行 → Databricks Apps (Production) へ自動デプロイ
 ```
 
-詳細は [Databricks Apps設定](./PricingAIFrontend-develop%202/docs/development/DatabricksAppsSetup.md) を参照。
+詳細は以下を参照:
+- [ローカル開発ガイド](./LOCAL_DEV_GUIDE.md) - Venv環境でのローカルテスト
+- [デプロイフロー](./DEPLOYMENT_FLOW.md) - GitHub Actions → Databricks Apps自動デプロイ
+- [Databricks Apps設定](./PricingAIFrontend-develop%202/docs/development/DatabricksAppsSetup.md) - 初期セットアップ
 
 ## 📊 重要な設計決定
 

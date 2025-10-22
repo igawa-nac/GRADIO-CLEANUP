@@ -1,0 +1,58 @@
+bundle:
+  name: pricing-ai-app-bundle
+
+# アプリとリソースの定義
+resources:
+  apps:
+    pricing_ai_app:
+      name: 'pricing-ai-gradio-app'
+      source_code_path: './PricingAIFrontend-develop 2'
+      description: 'PricingAI - 価格最適化システム Gradio UI'
+
+      # リソース宣言（app.yamlから参照される）
+      resources:
+        # Secret Scopeのシークレット
+        secrets:
+          databricks_token:
+            scope: pricing-ai-secrets
+            key: databricks-token
+          training_job_id:
+            scope: pricing-ai-secrets
+            key: training-job-id
+          prediction_job_id:
+            scope: pricing-ai-secrets
+            key: prediction-job-id
+
+          # データファイルパス（環境別に管理）
+          kkk_file_path:
+            scope: pricing-ai-secrets
+            key: kkk-file-path
+          series_file_path:
+            scope: pricing-ai-secrets
+            key: series-file-path
+          item_file_path:
+            scope: pricing-ai-secrets
+            key: item-file-path
+          drop_file_path:
+            scope: pricing-ai-secrets
+            key: drop-file-path
+
+          # モデル保存先パス
+          model_zero_path:
+            scope: pricing-ai-secrets
+            key: model-zero-path
+          model_up_path:
+            scope: pricing-ai-secrets
+            key: model-up-path
+
+# 環境別ターゲット
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: https://adb-xxxxx-dev.azuredatabricks.net
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-xxxxx-prod.azuredatabricks.net
