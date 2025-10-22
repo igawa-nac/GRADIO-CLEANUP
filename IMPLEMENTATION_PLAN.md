@@ -87,56 +87,63 @@ GRADIO_ANALYTICS_ENABLED=False
 
 **実装内容**:
 ```yaml
-# Databricks Apps 設定ファイル
-name: pricing-ai-frontend
-version: 1.0.0
-
-# エントリーポイント
+# アプリケーション設定
 command:
-  - python
-  - app.py
+  - "python"
+  - "app.py"
 
-# 環境変数
+# 環境変数定義
 env:
-  GRADIO_SERVER_NAME: "0.0.0.0"
-  GRADIO_SERVER_PORT: "8080"
-  GRADIO_ANALYTICS_ENABLED: "False"
-  PYTHONPATH: "/workspace"
+  # 静的な設定値（非機密情報のみ）
+  - name: LOG_LEVEL
+    value: "info"
+  - name: GRADIO_ANALYTICS_ENABLED
+    value: "false"
 
-# リソース設定
-resources:
-  driver:
-    memory: "4g"
-    cores: 2
+  # リソース参照（databricks.ymlで宣言したリソースキーを使用）
+  # 重要: DATABRICKS_HOST, APP_PORTは自動設定されるため不要
 
-# 依存関係
-dependencies:
-  python:
-    requirements: requirements.txt
+  - name: DATABRICKS_TOKEN
+    valueFrom: databricks_token
 
-# ヘルスチェック
-health_check:
-  path: /
-  interval: 30
-  timeout: 10
-  retries: 3
+  - name: TRAINING_JOB_ID
+    valueFrom: training_job_id
 
-# ポート公開
-ports:
-  - port: 8080
-    protocol: http
+  - name: PREDICTION_JOB_ID
+    valueFrom: prediction_job_id
 
-# シークレット (Phase 2で設定)
-# secrets:
-#   - scope: pricing-ai-secrets
-#     key: databricks-token
-#     env_var: DATABRICKS_TOKEN
+  # データファイルパス（環境別）
+  - name: KKK_FILE
+    valueFrom: kkk_file_path
+
+  - name: SERIES_FILE
+    valueFrom: series_file_path
+
+  - name: ITEM_FILE
+    valueFrom: item_file_path
+
+  - name: DROP_FILE
+    valueFrom: drop_file_path
+
+  # モデル保存先
+  - name: OUTPUT_ZERO
+    valueFrom: model_zero_path
+
+  - name: OUTPUT_UP
+    valueFrom: model_up_path
 ```
 
+**重要なポイント**:
+- ✅ `command` でエントリーポイントを指定
+- ✅ `valueFrom` でdatabricks.ymlのリソースを参照
+- ✅ `APP_PORT`, `DATABRICKS_HOST` は**自動設定されるため手動設定不要**
+- ✅ 機密情報は**絶対にハードコードしない**
+
 **チェックリスト**:
-- [ ] app.yaml 作成
+- [ ] app.yaml 作成（valueFrom形式）
+- [ ] databricks.yml 作成（リソース宣言）
 - [ ] requirements.txt の依存関係確認・更新
-- [ ] app.py がDatabricks Apps環境変数を使用するように修正
+- [ ] app.py がAPP_PORT環境変数を使用するように修正
 
 ---
 
@@ -147,35 +154,50 @@ ports:
 **修正内容**:
 ```python
 # app.py (修正版)
+import os
+import logging
+import gradio as gr
 from components.layouts.MainLayout import MainLayout
 from components.tables.SelectableTable import SelectableTable
 from components.forms.PredictionForm import PredictionForm
 from components.forms.TrainingForm import TrainingForm
 from data.demodata import checkbox_demo_data
-import gradio as gr
-import os
-import logging
 
-# ロギング設定
+# ログ設定
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Databricks Apps 環境変数
-SERVER_NAME = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
-SERVER_PORT = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
+# Databricks Apps環境判定
+IS_DATABRICKS_APPS = os.getenv("APP_NAME") is not None
 
-with gr.Blocks() as demo:
+# ポート設定: Databricks Appsでは APP_PORT が自動設定される
+if IS_DATABRICKS_APPS:
+    # Databricks Apps環境: 自動設定された環境変数を使用
+    SERVER_NAME = "0.0.0.0"
+    SERVER_PORT = int(os.getenv("APP_PORT"))  # Databricks Appsが自動設定
+    logger.info(f"Running on Databricks Apps environment")
+    logger.info(f"App Name: {os.getenv('APP_NAME')}")
+    logger.info(f"Workspace ID: {os.getenv('DATABRICKS_WORKSPACE_ID')}")
+    logger.info(f"Databricks Host: {os.getenv('DATABRICKS_HOST')}")
+else:
+    # ローカル開発環境: デフォルト値を使用
+    SERVER_NAME = "0.0.0.0"
+    SERVER_PORT = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
+    logger.info("Running on local development environment")
+
+# Gradioアプリ構築
+with gr.Blocks(title="PricingAI - 価格最適化システム") as demo:
     MainLayout(
         [
             {
-                "name" : "学習の開始!",
+                "name" : "学習の開始！",
                 "component" : TrainingForm
             },
             {
-                "name" : "予測の開始!",
+                "name" : "予測の開始！",
                 "component" : PredictionForm
             },
             {
@@ -198,14 +220,104 @@ if __name__ == "__main__":
     )
 ```
 
+**重要なポイント**:
+- ✅ `APP_NAME` の有無で環境判定（Databricks Apps環境かどうか）
+- ✅ Databricks Appsでは `APP_PORT` を使用（自動設定される）
+- ✅ ローカル開発では `GRADIO_SERVER_PORT` (デフォルト7860)
+- ✅ 環境情報をログ出力
+
 **チェックリスト**:
-- [ ] app.py に環境変数設定追加
+- [ ] app.py に環境判定ロジック追加
+- [ ] APP_PORT 自動設定環境変数の使用
+- [ ] ローカル開発との互換性確保
 - [ ] ロギング設定追加
 - [ ] ローカルで動作確認 (`python app.py`)
 
 ---
 
-#### 1.4 .gitignore の更新
+#### 1.4 databricks.yml の作成 ⭐ **重要**
+
+**所要時間**: 30分
+
+**ファイルパス**: `databricks.yml` (プロジェクトルート)
+
+**実装内容**:
+```yaml
+bundle:
+  name: pricing-ai-app-bundle
+
+# アプリとリソースの定義
+resources:
+  apps:
+    pricing_ai_app:
+      name: 'pricing-ai-gradio-app'
+      source_code_path: './PricingAIFrontend-develop 2'
+      description: 'PricingAI - 価格最適化システム Gradio UI'
+
+      # リソース宣言（app.yamlから参照される）
+      resources:
+        # Secret Scopeのシークレット
+        secrets:
+          databricks_token:
+            scope: pricing-ai-secrets
+            key: databricks-token
+          training_job_id:
+            scope: pricing-ai-secrets
+            key: training-job-id
+          prediction_job_id:
+            scope: pricing-ai-secrets
+            key: prediction-job-id
+
+          # データファイルパス（環境別に管理）
+          kkk_file_path:
+            scope: pricing-ai-secrets
+            key: kkk-file-path
+          series_file_path:
+            scope: pricing-ai-secrets
+            key: series-file-path
+          item_file_path:
+            scope: pricing-ai-secrets
+            key: item-file-path
+          drop_file_path:
+            scope: pricing-ai-secrets
+            key: drop-file-path
+
+          # モデル保存先パス
+          model_zero_path:
+            scope: pricing-ai-secrets
+            key: model-zero-path
+          model_up_path:
+            scope: pricing-ai-secrets
+            key: model-up-path
+
+# 環境別ターゲット
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: https://adb-xxxxx-dev.azuredatabricks.net
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-xxxxx-prod.azuredatabricks.net
+```
+
+**重要なポイント**:
+- ✅ `resources.secrets` でSecret Scopeのシークレットを宣言
+- ✅ app.yamlから`valueFrom`でリソースキーを参照
+- ✅ 環境別ターゲット（dev, prod）を定義
+- ✅ 同一コードで複数環境をサポート
+
+**チェックリスト**:
+- [ ] databricks.yml 作成（プロジェクトルート）
+- [ ] リソース宣言（secrets）
+- [ ] 環境別ターゲット設定
+- [ ] app.yaml との整合性確認
+
+---
+
+#### 1.5 .gitignore の更新
 
 **所要時間**: 10分
 
@@ -812,76 +924,94 @@ Databricks AppsにGradio UIをデプロイし、動作確認する
 
 ### タスク
 
-#### 3.1 Databricks App の作成
+#### 3.1 Databricks Bundle のセットアップ
 
 **所要時間**: 1時間
 
-**手順** (CLI使用):
+**手順**:
 ```bash
-# 1. Databricks CLI インストール
-pip install databricks-cli
+# 1. Databricks CLI インストール（最新版）
+pip install --upgrade databricks-cli
 
 # 2. 認証設定
 databricks configure --token
 # Host: https://adb-xxxxx.azuredatabricks.net
 # Token: [your access token]
 
-# 3. App 作成
-databricks apps create \
-  --app-name pricing-ai-frontend-development \
-  --git-url https://github.com/igawa-nac/GRADIO-CLEANUP.git \
-  --git-branch develop \
-  --git-path "PricingAIFrontend-develop 2" \
-  --description "PricingAI Gradio UI - 開発環境"
+# 3. Bundle の検証
+cd GRADIO-CLEANUP
+databricks bundle validate
+
+# 出力例:
+# ✓ Configuration is valid
 ```
 
-**または UI から**:
-1. Apps > Create App
-2. 設定:
-   - App Name: `pricing-ai-frontend-development`
-   - Source: Git Repository
-   - Repository: `https://github.com/igawa-nac/GRADIO-CLEANUP.git`
-   - Branch: `develop`
-   - Path: `PricingAIFrontend-develop 2`
+**databricks.yml の確認**:
+- ✅ `bundle.name` が設定されている
+- ✅ `resources.apps` にアプリが定義されている
+- ✅ `targets` に dev/prod 環境が定義されている
+- ✅ `resources.secrets` にシークレットが宣言されている
 
 **チェックリスト**:
-- [ ] App作成完了
-- [ ] Git連携設定完了
-- [ ] App URLの取得
+- [ ] Databricks CLI インストール完了
+- [ ] 認証設定完了
+- [ ] databricks.yml 作成済み
+- [ ] Bundle 検証成功
 
 ---
 
-#### 3.2 初回デプロイとトラブルシューティング
+#### 3.2 開発環境への初回デプロイ
 
 **所要時間**: 2-3時間
 
-**デプロイ実行**:
+**デプロイ実行** (Bundle使用):
 ```bash
-databricks apps deploy --app-name pricing-ai-frontend-development
+cd GRADIO-CLEANUP
+
+# 開発環境へデプロイ
+databricks bundle deploy -t dev
+
+# 出力例:
+# Uploading PricingAIFrontend-develop 2 to /Workspace/...
+# Deploying resources...
+#   ✓ pricing_ai_app
+# Deployment complete!
+```
+
+**デプロイ確認**:
+```bash
+# アプリの状態確認
+databricks bundle run pricing_ai_app -t dev
+
+# アプリ情報の取得
+databricks apps get pricing-ai-gradio-app
 ```
 
 **想定される問題と対処**:
 
 | 問題 | 原因 | 解決策 |
 |------|------|--------|
-| ModuleNotFoundError | requirements.txt 不足 | 依存関係を追加 |
-| Port binding error | ポート設定ミス | app.yaml のポート確認 |
-| Secret not found | シークレット未設定 | Secret Scope確認 |
-| Permission denied | アクセス権限不足 | Workspace管理者に連絡 |
+| Bundle validation failed | databricks.yml 構文エラー | YAML構文確認、インデント修正 |
+| Secret not found | Secret Scope未作成 | Phase 2のSecret Scope作成を完了 |
+| Permission denied | アクセス権限不足 | Workspace管理者に Apps作成権限を依頼 |
+| Resource key not found | valueFrom参照エラー | databricks.ymlのリソースキー確認 |
+| APP_PORT not set | 環境変数エラー | app.py の環境判定ロジック確認 |
 
 **ログ確認**:
 ```bash
-# ログの確認
-databricks apps logs --app-name pricing-ai-frontend-development --tail 100
+# アプリログの確認
+databricks apps logs pricing-ai-gradio-app --tail 100
 
 # リアルタイムログ
-databricks apps logs --app-name pricing-ai-frontend-development --follow
+databricks apps logs pricing-ai-gradio-app --follow
 ```
 
 **チェックリスト**:
-- [ ] デプロイ成功
+- [ ] Bundle デプロイ成功
 - [ ] アプリが起動
-- [ ] UIにアクセス可能
+- [ ] UIにアクセス可能（App URL確認）
+- [ ] 環境変数が正しく読み込まれている
+- [ ] APP_PORT が自動設定されている
 - [ ] エラーログがないことを確認
 
 ---
@@ -991,22 +1121,21 @@ jobs:
         id: env
         run: |
           if [ "${{ github.ref }}" == "refs/heads/main" ]; then
-            echo "app_name=pricing-ai-frontend-production" >> $GITHUB_OUTPUT
+            echo "target=prod" >> $GITHUB_OUTPUT
             echo "environment=production" >> $GITHUB_OUTPUT
           else
-            echo "app_name=pricing-ai-frontend-development" >> $GITHUB_OUTPUT
+            echo "target=dev" >> $GITHUB_OUTPUT
             echo "environment=development" >> $GITHUB_OUTPUT
           fi
 
-      - name: Deploy to Databricks Apps
+      - name: Deploy to Databricks Apps (Bundle)
         run: |
-          databricks apps deploy \
-            --app-name ${{ steps.env.outputs.app_name }} \
-            --git-branch ${{ github.ref_name }}
+          cd GRADIO-CLEANUP
+          databricks bundle deploy -t ${{ steps.env.outputs.target }}
 
       - name: Verify deployment
         run: |
-          databricks apps get --app-name ${{ steps.env.outputs.app_name }}
+          databricks apps get pricing-ai-gradio-app
 
       - name: Notify deployment
         if: success()
@@ -1091,30 +1220,53 @@ def test_run_job_success(mock_post, mock_env):
 
 ---
 
-#### 4.3 本番環境用Appの作成
+#### 4.3 本番環境へのデプロイ
 
 **所要時間**: 1時間
 
 **手順**:
 ```bash
-databricks apps create \
-  --app-name pricing-ai-frontend-production \
-  --git-url https://github.com/igawa-nac/GRADIO-CLEANUP.git \
-  --git-branch main \
-  --git-path "PricingAIFrontend-develop 2" \
-  --description "PricingAI Gradio UI - 本番環境"
+cd GRADIO-CLEANUP
+
+# 本番環境ターゲットへデプロイ
+databricks bundle deploy -t prod
+
+# デプロイ確認
+databricks apps get pricing-ai-gradio-app
 ```
 
-**本番環境用設定**:
+**本番環境用の事前準備**:
+1. **Secret Scope設定** (本番用):
+```bash
+# 本番用Secret Scopeの作成
+databricks secrets create-scope pricing-ai-secrets-prod
+
+# 本番用シークレットの登録
+databricks secrets put-secret pricing-ai-secrets-prod databricks-token --string-value "..."
+databricks secrets put-secret pricing-ai-secrets-prod training-job-id --string-value "..."
+# ... 他のシークレットも登録
+```
+
+2. **databricks.yml の本番ターゲット確認**:
+```yaml
+targets:
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-xxxxx-prod.azuredatabricks.net
+```
+
+3. **本番環境用設定**:
 - アクセス制限の設定
-- ログレベルの調整
+- ログレベルの調整 (LOG_LEVEL=warning)
 - リソース設定の最適化
 
 **チェックリスト**:
-- [ ] 本番App作成完了
+- [ ] 本番用Secret Scope作成完了
+- [ ] 本番用シークレット登録完了
+- [ ] 本番環境へBundle デプロイ成功
 - [ ] アクセス制限設定
-- [ ] 本番用Secret Scope設定
-- [ ] 本番用Jobs作成
+- [ ] 本番用Databricks Jobs作成
 
 ---
 
