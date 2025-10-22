@@ -151,108 +151,177 @@ jobs:
 
 ---
 
-### ステップ2: app.yaml 設定
+### ステップ2: databricks.yml 設定（リソース宣言）
+
+**databricks.yml** (プロジェクトルート):
+
+```yaml
+bundle:
+  name: pricing-ai-app-bundle
+
+# アプリとリソースの定義
+resources:
+  apps:
+    pricing_ai_app:
+      name: 'pricing-ai-gradio-app'
+      source_code_path: './PricingAIFrontend-develop 2'
+      description: 'PricingAI - 価格最適化システム Gradio UI'
+
+      # リソース宣言（app.yamlから参照される）
+      resources:
+        # Secret Scopeのシークレット
+        secrets:
+          databricks_token:
+            scope: pricing-ai-secrets
+            key: databricks-token
+          training_job_id:
+            scope: pricing-ai-secrets
+            key: training-job-id
+          prediction_job_id:
+            scope: pricing-ai-secrets
+            key: prediction-job-id
+
+          # データファイルパス（環境別に管理）
+          kkk_file_path:
+            scope: pricing-ai-secrets
+            key: kkk-file-path
+          series_file_path:
+            scope: pricing-ai-secrets
+            key: series-file-path
+          item_file_path:
+            scope: pricing-ai-secrets
+            key: item-file-path
+          drop_file_path:
+            scope: pricing-ai-secrets
+            key: drop-file-path
+
+          # モデル保存先パス
+          model_zero_path:
+            scope: pricing-ai-secrets
+            key: model-zero-path
+          model_up_path:
+            scope: pricing-ai-secrets
+            key: model-up-path
+
+# 環境別ターゲット
+targets:
+  dev:
+    mode: development
+    workspace:
+      host: https://adb-xxxxx-dev.azuredatabricks.net
+
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-xxxxx-prod.azuredatabricks.net
+```
+
+---
+
+### ステップ3: app.yaml 設定（環境変数定義）
 
 **PricingAIFrontend-develop 2/app.yaml**:
 
 ```yaml
-name: pricing-ai-gradio-app
-
 # アプリケーション設定
 command:
   - "python"
   - "app.py"
 
-# 環境変数（Secret Scopeから取得）
+# 環境変数定義
 env:
-  # Gradio設定
-  - name: GRADIO_SERVER_NAME
-    value: "0.0.0.0"
-  - name: GRADIO_SERVER_PORT
-    value: "8080"
+  # 静的な設定値（非機密情報のみ）
+  - name: LOG_LEVEL
+    value: "info"
   - name: GRADIO_ANALYTICS_ENABLED
     value: "false"
 
-  # Databricks接続（Secret Scopeから取得）
-  - name: DATABRICKS_HOST
-    secret:
-      scope: pricing-ai-secrets
-      key: databricks-host
+  # リソース参照（databricks.ymlで宣言したリソースキーを使用）
+  # 重要: DATABRICKS_HOST, APP_PORTは自動設定されるため不要
+
   - name: DATABRICKS_TOKEN
-    secret:
-      scope: pricing-ai-secrets
-      key: databricks-token
+    valueFrom: databricks_token
 
-  # Databricks Jobs ID
   - name: TRAINING_JOB_ID
-    secret:
-      scope: pricing-ai-secrets
-      key: training-job-id
-  - name: PREDICTION_JOB_ID
-    secret:
-      scope: pricing-ai-secrets
-      key: prediction-job-id
+    valueFrom: training_job_id
 
-  # データファイルパス
+  - name: PREDICTION_JOB_ID
+    valueFrom: prediction_job_id
+
+  # データファイルパス（環境別）
   - name: KKK_FILE
-    value: "/dbfs/mnt/data/kkk_master_20250903.csv"
+    valueFrom: kkk_file_path
+
   - name: SERIES_FILE
-    value: "/dbfs/mnt/data/series_mst_20250626.csv"
+    valueFrom: series_file_path
+
   - name: ITEM_FILE
-    value: "/dbfs/mnt/data/item_master.csv"
+    valueFrom: item_file_path
+
   - name: DROP_FILE
-    value: "/dbfs/mnt/data/drop_items.csv"
+    valueFrom: drop_file_path
 
   # モデル保存先
   - name: OUTPUT_ZERO
-    value: "/dbfs/mnt/models/pricing_ai/model_zero"
+    valueFrom: model_zero_path
+
   - name: OUTPUT_UP
-    value: "/dbfs/mnt/models/pricing_ai/model_up"
-
-# リソース設定
-resources:
-  instance_type: "m5.xlarge"  # 4 vCPU, 16 GB RAM
-  min_instances: 1
-  max_instances: 2
-
-# ヘルスチェック
-health_check:
-  path: "/"
-  interval_seconds: 30
-  timeout_seconds: 10
-  unhealthy_threshold: 3
-  healthy_threshold: 2
-
-# ネットワーク設定
-network:
-  ingress:
-    - port: 8080
-      protocol: "http"
+    valueFrom: model_up_path
 ```
+
+**重要なポイント**:
+- ✅ `DATABRICKS_HOST`, `APP_PORT`: Databricks Appsで**自動設定**されるため、手動設定不要
+- ✅ `valueFrom`: databricks.ymlで宣言したリソースキーを参照
+- ✅ 機密情報は**絶対にハードコードしない** - すべて`valueFrom`で参照
+- ✅ 環境固有の値（ファイルパス、Job IDなど）もSecretで管理し、環境間のポータビリティを確保
 
 ---
 
-### ステップ3: Secret Scope セットアップ
+### ステップ4: Secret Scope セットアップ
 
-Databricks Workspace で Secret Scope を作成:
+Databricks Workspace で Secret Scope を作成し、環境固有の値を登録:
 
 ```bash
-# Databricks CLI でSecret Scope作成
+# 1. Secret Scope作成（初回のみ）
 databricks secrets create-scope pricing-ai-secrets
 
-# Secret登録
-databricks secrets put-secret pricing-ai-secrets databricks-host \
-  --string-value "https://adb-xxxxx.azuredatabricks.net"
-
+# 2. 認証情報の登録
 databricks secrets put-secret pricing-ai-secrets databricks-token \
   --string-value "dapi_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
+# 3. Databricks Jobs IDの登録
 databricks secrets put-secret pricing-ai-secrets training-job-id \
   --string-value "123456"
 
 databricks secrets put-secret pricing-ai-secrets prediction-job-id \
   --string-value "789012"
+
+# 4. データファイルパスの登録（環境別）
+# Dev環境
+databricks secrets put-secret pricing-ai-secrets kkk-file-path \
+  --string-value "/dbfs/mnt/dev/data/kkk_master_20250903.csv"
+
+databricks secrets put-secret pricing-ai-secrets series-file-path \
+  --string-value "/dbfs/mnt/dev/data/series_mst_20250626.csv"
+
+databricks secrets put-secret pricing-ai-secrets item-file-path \
+  --string-value "/dbfs/mnt/dev/data/item_master.csv"
+
+databricks secrets put-secret pricing-ai-secrets drop-file-path \
+  --string-value "/dbfs/mnt/dev/data/drop_items.csv"
+
+# 5. モデル保存先パスの登録（環境別）
+databricks secrets put-secret pricing-ai-secrets model-zero-path \
+  --string-value "/dbfs/mnt/dev/models/pricing_ai/model_zero"
+
+databricks secrets put-secret pricing-ai-secrets model-up-path \
+  --string-value "/dbfs/mnt/dev/models/pricing_ai/model_up"
 ```
+
+**環境別Secret管理のベストプラクティス**:
+- Dev環境: `/dbfs/mnt/dev/...`
+- Prod環境: `/dbfs/mnt/prod/...`
+- 環境ごとに異なるSecret Scopeを作成 (`pricing-ai-secrets-dev`, `pricing-ai-secrets-prod`)
 
 **Secret Scope確認**:
 ```bash
@@ -265,7 +334,7 @@ databricks secrets list-secrets pricing-ai-secrets
 
 ---
 
-### ステップ4: app.py の Databricks Apps対応
+### ステップ5: app.py の Databricks Apps対応
 
 **PricingAIFrontend-develop 2/app.py** (修正版):
 
@@ -282,16 +351,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Databricks Apps環境変数
-SERVER_NAME = os.getenv("GRADIO_SERVER_NAME", "0.0.0.0")
-SERVER_PORT = int(os.getenv("GRADIO_SERVER_PORT", "8080"))
-
 # Databricks Apps環境判定
-IS_DATABRICKS_APPS = os.getenv("DATABRICKS_RUNTIME_VERSION") is not None
+IS_DATABRICKS_APPS = os.getenv("APP_NAME") is not None
 
+# ポート設定: Databricks Appsでは APP_PORT が自動設定される
 if IS_DATABRICKS_APPS:
-    logger.info("Running on Databricks Apps environment")
+    # Databricks Apps環境: 自動設定された環境変数を使用
+    SERVER_NAME = "0.0.0.0"
+    SERVER_PORT = int(os.getenv("APP_PORT"))  # Databricks Appsが自動設定
+    logger.info(f"Running on Databricks Apps environment")
+    logger.info(f"App Name: {os.getenv('APP_NAME')}")
+    logger.info(f"Workspace ID: {os.getenv('DATABRICKS_WORKSPACE_ID')}")
+    logger.info(f"Databricks Host: {os.getenv('DATABRICKS_HOST')}")
 else:
+    # ローカル開発環境: デフォルト値を使用
+    SERVER_NAME = "0.0.0.0"
+    SERVER_PORT = int(os.getenv("GRADIO_SERVER_PORT", "7860"))
     logger.info("Running on local development environment")
 
 # Gradioアプリ構築
@@ -317,6 +392,17 @@ if __name__ == "__main__":
         # Databricks Apps では認証不要
         auth=None
     )
+```
+
+**自動設定される環境変数の活用**:
+```python
+# Databricks Appsで自動的に利用可能な環境変数
+APP_NAME = os.getenv("APP_NAME")                          # アプリ名
+APP_PORT = os.getenv("APP_PORT")                          # アプリポート（必須）
+DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")            # ワークスペースURL
+DATABRICKS_WORKSPACE_ID = os.getenv("DATABRICKS_WORKSPACE_ID")
+DATABRICKS_CLIENT_ID = os.getenv("DATABRICKS_CLIENT_ID")  # サービスプリンシパル
+DATABRICKS_CLIENT_SECRET = os.getenv("DATABRICKS_CLIENT_SECRET")
 ```
 
 ---
@@ -533,14 +619,17 @@ databricks apps deploy pricing-ai-gradio-app \
 | 項目 | ローカル (Venv) | Databricks Apps |
 |------|----------------|-----------------|
 | **Python環境** | Venv | Databricks Runtime |
-| **ポート** | 7860 | 8080 |
-| **サーバー名** | localhost | 0.0.0.0 |
-| **環境変数** | .env.local | Secret Scope |
-| **データパス** | ./local_test_data/ | /dbfs/mnt/data/ |
-| **モデル保存先** | ./local_models/ | /dbfs/mnt/models/ |
-| **Databricks API** | Mock Client | 実際のAPI |
+| **ポート** | 7860 (GRADIO_SERVER_PORT) | APP_PORT（自動設定） |
+| **サーバー名** | 0.0.0.0 | 0.0.0.0 |
+| **ホスト名** | - | DATABRICKS_HOST（自動設定） |
+| **環境変数管理** | .env.local（ファイル） | databricks.yml + Secret Scope |
+| **環境変数参照** | dotenv | valueFrom（リソース参照） |
+| **データパス** | ./local_test_data/ | /dbfs/mnt/{env}/data/ |
+| **モデル保存先** | ./local_models/ | /dbfs/mnt/{env}/models/ |
+| **Databricks API** | Mock Client | 実際のAPI（自動認証） |
 | **テストデータ** | ダミーデータ | 実データ |
-| **認証** | 不要 | Databricks認証 |
+| **認証** | 不要 | 自動（サービスプリンシパル） |
+| **設定ファイル** | .env.local | databricks.yml, app.yaml |
 
 ---
 
@@ -551,8 +640,10 @@ databricks apps deploy pricing-ai-gradio-app \
 - [ ] pytest 全テスト合格
 - [ ] ruff Lintチェック合格
 - [ ] .env.local がコミットされていない
-- [ ] app.yaml 設定確認
-- [ ] Secret Scope 設定確認
+- [ ] databricks.yml にリソース宣言完了
+- [ ] app.yaml で valueFrom によるリソース参照確認
+- [ ] Secret Scope に全ての環境変数登録完了
+- [ ] app.py で APP_PORT を使用していることを確認
 
 ### デプロイ後
 - [ ] GitHub Actions 成功確認
@@ -566,17 +657,72 @@ databricks apps deploy pricing-ai-gradio-app \
 
 ## 🎓 ベストプラクティス
 
-### 1. 環境変数の管理
+### 1. 環境変数の管理（重要）
 
-```python
-# 良い例: Secret Scopeを活用
-DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
+**✅ 推奨: databricks.yml + app.yaml + valueFrom**
+```yaml
+# databricks.yml
+resources:
+  apps:
+    my_app:
+      resources:
+        secrets:
+          api_key:
+            scope: my-scope
+            key: api-key
 
-# 悪い例: ハードコード
-DATABRICKS_TOKEN = "dapi_xxxxxxxx"  # ❌ 絶対にダメ！
+# app.yaml
+env:
+  - name: API_KEY
+    valueFrom: api_key  # リソース参照
 ```
 
-### 2. ログの活用
+**✅ アプリコードでの読み込み**
+```python
+# 良い例: 環境変数から読み込み
+API_KEY = os.getenv("API_KEY")
+DATABRICKS_TOKEN = os.getenv("DATABRICKS_TOKEN")
+
+# Databricks Apps自動設定の環境変数を活用
+APP_PORT = int(os.getenv("APP_PORT"))  # 自動設定
+DATABRICKS_HOST = os.getenv("DATABRICKS_HOST")  # 自動設定
+```
+
+**❌ 悪い例: ハードコード**
+```python
+# 絶対にダメ！
+DATABRICKS_TOKEN = "dapi_xxxxxxxx"  # ❌
+API_KEY = "secret123"  # ❌
+```
+
+**❌ 悪い例: app.yamlで直接設定**
+```yaml
+# app.yaml
+env:
+  - name: DATABRICKS_TOKEN
+    value: "dapi_xxxxxxxx"  # ❌ 機密情報のハードコード
+```
+
+### 2. 自動設定環境変数の活用
+
+```python
+import os
+
+# Databricks Apps環境判定
+IS_DATABRICKS_APPS = os.getenv("APP_NAME") is not None
+
+if IS_DATABRICKS_APPS:
+    # 自動設定された環境変数を使用
+    port = int(os.getenv("APP_PORT"))  # 必須
+    host = os.getenv("DATABRICKS_HOST")
+    workspace_id = os.getenv("DATABRICKS_WORKSPACE_ID")
+    app_name = os.getenv("APP_NAME")
+else:
+    # ローカル開発環境のデフォルト値
+    port = 7860
+```
+
+### 3. ログの活用
 
 ```python
 import logging
@@ -586,10 +732,12 @@ logger = logging.getLogger(__name__)
 # 環境判定をログ出力
 if IS_DATABRICKS_APPS:
     logger.info("Running on Databricks Apps")
+    logger.info(f"App Name: {os.getenv('APP_NAME')}")
+    logger.info(f"Port: {os.getenv('APP_PORT')}")
     logger.info(f"Using data path: {os.getenv('KKK_FILE')}")
 ```
 
-### 3. エラーハンドリング
+### 4. エラーハンドリング
 
 ```python
 try:
@@ -599,7 +747,7 @@ except Exception as e:
     return gr.update(value=f"エラー: {str(e)}")
 ```
 
-### 4. デプロイ頻度
+### 5. デプロイ頻度
 
 - **develop ブランチ**: 毎日デプロイ可能
 - **main ブランチ**: 週1回のリリース推奨

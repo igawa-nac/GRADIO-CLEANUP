@@ -1,0 +1,44 @@
+# アプリケーション設定
+command:
+  - "python"
+  - "app.py"
+
+# 環境変数定義
+env:
+  # 静的な設定値（非機密情報のみ）
+  - name: LOG_LEVEL
+    value: "info"
+  - name: GRADIO_ANALYTICS_ENABLED
+    value: "false"
+
+  # リソース参照（databricks.ymlで宣言したリソースキーを使用）
+  # 重要: DATABRICKS_HOST, APP_PORTは自動設定されるため不要
+
+  - name: DATABRICKS_TOKEN
+    valueFrom: databricks_token
+
+  - name: TRAINING_JOB_ID
+    valueFrom: training_job_id
+
+  - name: PREDICTION_JOB_ID
+    valueFrom: prediction_job_id
+
+  # データファイルパス（環境別）
+  - name: KKK_FILE
+    valueFrom: kkk_file_path
+
+  - name: SERIES_FILE
+    valueFrom: series_file_path
+
+  - name: ITEM_FILE
+    valueFrom: item_file_path
+
+  - name: DROP_FILE
+    valueFrom: drop_file_path
+
+  # モデル保存先
+  - name: OUTPUT_ZERO
+    valueFrom: model_zero_path
+
+  - name: OUTPUT_UP
+    valueFrom: model_up_path

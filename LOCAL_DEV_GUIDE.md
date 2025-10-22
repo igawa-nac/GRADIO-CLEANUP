@@ -281,10 +281,11 @@ DROP_FILE = os.getenv("DROP_FILE", "/dbfs/mnt/data/drop_items.csv")
 def get_databricks_client():
     """Databricks Jobs APIクライアントを取得"""
 
-    # ローカル開発モードの判定
-    is_local = os.getenv("GRADIO_SERVER_PORT") == "7860"
+    # Databricks Apps環境判定: APP_NAME が存在すれば Databricks Apps
+    is_databricks_apps = os.getenv("APP_NAME") is not None
 
-    if is_local and not os.getenv("DATABRICKS_TOKEN"):
+    # ローカル開発環境でかつDatabricks認証情報がない場合はMock使用
+    if not is_databricks_apps and not os.getenv("DATABRICKS_TOKEN"):
         logger.warning("ローカル開発モード: Databricks API呼び出しをスキップ")
         return MockDatabricksClient()
 
@@ -454,9 +455,12 @@ Databricks Appsにデプロイする前に、ローカルで徹底的にテス�
 | 項目 | ローカル | Databricks Apps |
 |------|---------|----------------|
 | ファイルパス | 相対パス or ./local_test_data/ | /dbfs/mnt/data/ |
-| 環境変数 | .env.local | Secret Scope |
+| 環境変数管理 | .env.local | databricks.yml + Secret Scope |
+| 環境変数読み込み | dotenv | valueFrom（リソース参照） |
 | データ | ダミーデータ | 実データ |
-| ポート | 7860 | 8080 |
+| ポート | 7860 (GRADIO_SERVER_PORT) | APP_PORT（自動設定） |
+| ホスト名 | - | DATABRICKS_HOST（自動設定） |
+| 環境判定 | APP_NAME が None | APP_NAME が存在 |
 
 ### 4. .gitignore の確認
 以下がignoreされていることを確認:
